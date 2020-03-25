@@ -8,6 +8,9 @@ const config = require("./config.json");
 mongoose.set("useCreateIndex", true);
 
 const UserModel = require("./models/user");
+const MusicModel = require("./models/music");
+
+let room = [];
 
 client.on("ready", () => {
   const mongoConnect = mongoose.connect(config.mongodb, {
@@ -22,17 +25,6 @@ client.on("ready", () => {
   );
 
   client.user.setActivity("Waiting for fee");
-  //   client.user.setPresence({
-  //     game: {
-  //       name: "comando",
-  //       type: 1,
-  //       url: "https://www.twitch.tv/pedroricardo"
-  //     }
-  //   });
-  //0 = Jogando
-  //  1 = Transmitindo
-  //  2 = Ouvindo
-  //  3 = Assistindo
 });
 
 client.on("message", async message => {
@@ -70,7 +62,7 @@ client.on("message", async message => {
 
   if (command === "next") {
     const sendId = message.author.id;
-    // const voiceChannel = message.member.voice.channel;
+    const music = args.join(" ");
 
     let user = await UserModel.findOne({ id: sendId });
 
@@ -107,17 +99,13 @@ client.on("message", async message => {
   }
 
   if (command === "skip") {
-    const voiceChannel = message.member.voice.channel;
-
-    if (!voiceChannel) {
+    if (!(room[voiceChannel.id] && room[voiceChannel.id].connection)) {
       await message.channel.send("Hold on, I'm not playing!");
 
       return;
     }
 
-    const connection = await voiceChannel.join();
-
-    connection.dispatcher.end();
+    room[voiceChannel.id].connection.dispatcher.end();
 
     return;
   }
@@ -137,9 +125,9 @@ client.on("message", async message => {
       user.dislike = [];
     }
 
-    const video = client.presence.activities.name;
+    const video = client.presence.activities[0].name;
 
-    if (!video.includes("youtube.com")) {
+    if (!video || !video.includes("youtube.com")) {
       message.channel.send(
         "I'm not even touching anything, you must be talking to the wrong person."
       );
@@ -158,8 +146,87 @@ client.on("message", async message => {
     return;
   }
 
+  if (command === "like") {
+    const sendId = message.author.id;
+
+    let user = await UserModel.findOne({ id: sendId });
+
+    if (!user) {
+      user = await UserModel.create({
+        id: sendId
+      });
+    }
+
+    if (!user.like) {
+      user.like = [];
+    }
+
+    const video = client.presence.activities[0].name;
+
+    if (!video || !video.includes("youtube.com")) {
+      message.channel.send(
+        "I'm not even touching anything, you must be talking to the wrong person."
+      );
+
+      return;
+    }
+
+    if (!user.like[video]) {
+      user.like.push(video);
+
+      await user.save();
+    }
+
+    message.channel.send("I know you like.");
+
+    return;
+  }
+
+  if (command === "volume") {
+    const voiceChannel = message.member.voice.channel;
+    if (!room[voiceChannel.id]) {
+      message.channel.send(
+        "I'm not even touching anything, you must be talking to the wrong person."
+      );
+
+      return;
+    }
+
+    const volume = args.shift();
+
+    if (volume < 0 || volume > 100) {
+      message.channel.send("Oh, right, sorry.");
+
+      return;
+    }
+
+    room[voiceChannel.id].pickup.setVolume(volume / 100);
+
+    return;
+  }
+
+  if (command === "stop") {
+    const voiceChannel = message.member.voice.channel;
+    if (!room[voiceChannel.id]) {
+      message.channel.send(
+        "I'm not even touching anything, you must be talking to the wrong person."
+      );
+
+      return;
+    }
+
+    room[voiceChannel.id]._musics = undefined;
+
+    room[voiceChannel.id].connection.dispatcher.end();
+
+    return;
+  }
+
   if (command === "play") {
     const voiceChannel = message.member.voice.channel;
+    if (!room[voiceChannel.id]) {
+      room[voiceChannel.id] = {};
+    }
 
     if (!voiceChannel) {
       await message.channel.send(
@@ -172,52 +239,128 @@ client.on("message", async message => {
       return;
     }
 
-    const connection = await voiceChannel.join();
+    room[voiceChannel.id].connection = await voiceChannel.join();
 
-    const users = voiceChannel.members
-      .filter(member => !member.user.bot)
-      .map(member => member.user.id);
-
-    let musics = [];
-
-    for (const _user of users) {
-      const user = await UserModel.findOne({ id: _user }).lean();
-
-      for (const musicLike of user.like) {
-        if (!musics[musicLike]) {
-          musics[musicLike] = { like: 0, dislike: 0, rating: 0 };
-        }
-
-        musics[musicLike].like = musics[musicLike].like + 1;
-        musics[musicLike].rating =
-          musics[musicLike].like / musics[musicLike].like +
-          musics[musicLike].dislike;
-      }
-    }
-
-    play(
-      connection,
-      musics.sort((a, b) => b.rating - a.rating)
+    room[voiceChannel.id].play = selectMusics(
+      voiceChannel,
+      room[voiceChannel.id].connection
     );
-
-    return;
   }
 });
 
-const play = async (connection, musics) => {
-  for (const music in musics) {
-    const videoStream = ytdl(music, {
+const selectMusics = async (voiceChannel, connection) => {
+  const users = voiceChannel.members
+    .filter(member => !member.user.bot)
+    .map(member => member.user.id);
+
+  let musics = [];
+
+  for (const _user of users) {
+    const user = await UserModel.findOne({ id: _user }).lean();
+
+    if (user) {
+      if (user.like) {
+        for (const musicLike of user.like) {
+          if (!musics[musicLike]) {
+            musics[musicLike] = { like: 0, dislike: 0, rating: 1 };
+          }
+
+          musics[musicLike].like = musics[musicLike].like + 1;
+        }
+      }
+
+      if (user.dislike) {
+        for (const musicDislike of user.dislike) {
+          if (!musics[musicDislike]) {
+            musics[musicDislike] = { like: 0, dislike: 0, rating: 0 };
+          }
+
+          musics[musicDislike].dislike = musics[musicDislike].dislike + 1;
+
+          musics[musicDislike].rating =
+            musics[musicDislike].like /
+            (musics[musicDislike].like + musics[musicDislike].dislike);
+        }
+      }
+    }
+  }
+
+  room[voiceChannel.id]._musics = [];
+  for (const id in musics) {
+    if (musics[id].rating > 0.5) {
+      const now = new Date();
+      let music = await MusicModel.findOne({ id: id }).lean();
+
+      if (!music) {
+        music = await MusicModel.create({
+          id: id,
+          played: new Date(now.setFullYear(now.getFullYear() - 1))
+        });
+      }
+
+      const lastPlayed = new Date(music.played);
+
+      room[voiceChannel.id]._musics.push({
+        ...musics[id],
+        id: id,
+        rating: musics[id].rating + (now.getTime() - lastPlayed.getTime())
+      });
+    }
+  }
+
+  room[voiceChannel.id]._musics = room[voiceChannel.id]._musics
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, 10);
+
+  await play(connection, voiceChannel);
+
+  return;
+};
+
+const play = async (connection, voiceChannel) => {
+  for (const music of room[voiceChannel.id]._musics) {
+    if (!room[voiceChannel.id]._musics) {
+      client.user.setActivity("Waiting for fee");
+
+      return;
+    }
+
+    const videoStream = ytdl(music.id, {
       filter: "audioonly"
     });
 
-    const pickup = connection.play(videoStream, config.streamOptions);
+    room[voiceChannel.id].pickup = connection.play(
+      videoStream,
+      config.streamOptions
+    );
 
-    client.user.setActivity(music);
+    client.user.setActivity(music.id);
 
-    await waitFinished(pickup);
+    try {
+      let _music = await MusicModel.findOne({ id: music.id });
+      if (!_music) {
+        _music = await MusicModel.create({
+          id: id,
+          played: new Date()
+        });
+      } else {
+        _music.played = new Date();
+        _music.save();
+      }
+    } catch (error) {
+      console.log("error", error);
+    }
+
+    await waitFinished(room[voiceChannel.id].pickup);
   }
 
-  client.user.setActivity("Waiting for fee");
+  if (!room[voiceChannel.id]._musics) {
+    client.user.setActivity("Waiting for fee");
+
+    return;
+  }
+
+  await selectMusics(voiceChannel, connection);
 
   return;
 };
