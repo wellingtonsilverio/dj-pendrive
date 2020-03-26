@@ -2,6 +2,7 @@ const Discord = require("discord.js");
 const ytdl = require("ytdl-core");
 const mongoose = require("mongoose");
 const yts = require("yt-search");
+const youtubeInfo = require("youtube-info");
 
 const client = new Discord.Client();
 const config = require("./config.json");
@@ -64,6 +65,22 @@ client.on("message", async message => {
     const sendId = message.author.id;
     const music = args.join(" ");
 
+    let video;
+    if (music.includes("youtube.com")) {
+      video = analysisMusics([{ url: music }]);
+    } else {
+      const search = await yts(music);
+      if (search.videos.length < 1) {
+        message.channel.send(
+          "Oh no, it looks like I didn't find this song in my music folder."
+        );
+
+        return;
+      }
+
+      video = analysisMusics(search.videos);
+    }
+
     let user = await UserModel.findOne({ id: sendId });
 
     if (!user) {
@@ -75,17 +92,6 @@ client.on("message", async message => {
     if (!user.like) {
       user.like = [];
     }
-
-    const search = await yts(music);
-    if (search.videos.length < 1) {
-      message.channel.send(
-        "Oh no, it looks like I didn't find this song in my music folder."
-      );
-
-      return;
-    }
-
-    const video = search.videos[0];
 
     if (!user.like[video.url]) {
       user.like.push(video.url);
@@ -99,6 +105,8 @@ client.on("message", async message => {
   }
 
   if (command === "skip") {
+    const voiceChannel = message.member.voice.channel;
+
     if (!(room[voiceChannel.id] && room[voiceChannel.id].connection)) {
       await message.channel.send("Hold on, I'm not playing!");
 
@@ -314,6 +322,14 @@ const selectMusics = async (voiceChannel, connection) => {
 
   await play(connection, voiceChannel);
 
+  if (!room[voiceChannel.id]._musics) {
+    client.user.setActivity("Waiting for fee");
+
+    return;
+  }
+
+  room[voiceChannel.id].play = selectMusics(voiceChannel, connection);
+
   return;
 };
 
@@ -354,14 +370,6 @@ const play = async (connection, voiceChannel) => {
     await waitFinished(room[voiceChannel.id].pickup);
   }
 
-  if (!room[voiceChannel.id]._musics) {
-    client.user.setActivity("Waiting for fee");
-
-    return;
-  }
-
-  await selectMusics(voiceChannel, connection);
-
   return;
 };
 
@@ -371,6 +379,25 @@ const waitFinished = pickup => {
       resolve();
     });
   });
+};
+
+const analysisMusics = async videos => {
+  for (const video of videos) {
+    try {
+      const v = video.url.split("v=");
+
+      const infos = await youtubeInfo(v[v.length - 1]);
+
+      if (infos.duration < 9 * 60 && infos.genre === "Music") {
+        if (!video.title) {
+          video.title = infos.title;
+        }
+        return video;
+      }
+    } catch (error) {
+      console.log("error analysisMusics", video.url, error);
+    }
+  }
 };
 
 client.login(config.token);
