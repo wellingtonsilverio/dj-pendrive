@@ -62,45 +62,48 @@ client.on("message", async message => {
   }
 
   if (command === "next") {
-    const sendId = message.author.id;
-    const music = args.join(" ");
+    try {
+      const sendId = message.author.id;
+      const music = args.join(" ");
 
-    let video;
-    if (music.includes("youtube.com")) {
-      video = await analysisMusics([{ url: music }]);
-    } else {
-      const search = await yts(music);
-      if (search.videos.length < 1) {
-        message.channel.send(
-          "Oh no, it looks like I didn't find this song in my music folder."
-        );
+      let video;
+      if (music.includes("youtube.com")) {
+        video = await analysisMusics([{ url: music }]);
+      } else {
+        const search = await yts(music);
+        if (search.videos.length < 1) {
+          message.channel.send(
+            "Oh no, it looks like I didn't find this song in my music folder."
+          );
 
-        return;
+          return;
+        }
+
+        video = await analysisMusics(search.videos);
       }
 
-      video = await analysisMusics(search.videos);
-      console.log("video", video);
+      let user = await UserModel.findOne({ id: sendId });
+
+      if (!user) {
+        user = await UserModel.create({
+          id: sendId
+        });
+      }
+
+      if (!user.like) {
+        user.like = [];
+      }
+
+      if (!user.like[video.url]) {
+        user.like.push(video.url);
+
+        await user.save();
+      }
+
+      message.channel.send(`I'll try to play ${video.title} for you.`);
+    } catch (error) {
+      console.log("next error: ", error);
     }
-
-    let user = await UserModel.findOne({ id: sendId });
-
-    if (!user) {
-      user = await UserModel.create({
-        id: sendId
-      });
-    }
-
-    if (!user.like) {
-      user.like = [];
-    }
-
-    if (!user.like[video.url]) {
-      user.like.push(video.url);
-
-      await user.save();
-    }
-
-    message.channel.send(`I'll try to play ${video.title} for you.`);
 
     return;
   }
@@ -203,13 +206,14 @@ client.on("message", async message => {
 
     const volume = args.shift();
 
-    if (volume < 0 || volume > 100) {
+    if (isNaN(volume) || volume < 0 || volume > 100) {
       message.channel.send("Oh, right, sorry.");
 
       return;
     }
 
     room[voiceChannel.id].pickup.setVolume(volume / 100);
+    room[voiceChannel.id].streamOptions.volume = volume / 100;
 
     return;
   }
@@ -233,9 +237,12 @@ client.on("message", async message => {
 
   if (command === "play") {
     const voiceChannel = message.member.voice.channel;
+
     if (!room[voiceChannel.id]) {
       room[voiceChannel.id] = {};
     }
+
+    room[voiceChannel.id].streamOptions = config.streamOptions;
 
     if (!voiceChannel) {
       await message.channel.send(
@@ -270,11 +277,13 @@ const selectMusics = async (voiceChannel, connection) => {
     if (user) {
       if (user.like) {
         for (const musicLike of user.like) {
-          if (!musics[musicLike]) {
-            musics[musicLike] = { like: 0, dislike: 0, rating: 1 };
-          }
+          if (musicLike && musicLike.includes("youtube.com")) {
+            if (!musics[musicLike]) {
+              musics[musicLike] = { like: 0, dislike: 0, rating: 1 };
+            }
 
-          musics[musicLike].like = musics[musicLike].like + 1;
+            musics[musicLike].like = musics[musicLike].like + 1;
+          }
         }
       }
 
@@ -348,7 +357,7 @@ const play = async (connection, voiceChannel) => {
 
     room[voiceChannel.id].pickup = connection.play(
       videoStream,
-      config.streamOptions
+      room[voiceChannel.id].streamOptions
     );
 
     client.user.setActivity(music.id);
