@@ -67,7 +67,7 @@ client.on("message", async message => {
 
     let video;
     if (music.includes("youtube.com")) {
-      video = analysisMusics([{ url: music }]);
+      video = await analysisMusics([{ url: music }]);
     } else {
       const search = await yts(music);
       if (search.videos.length < 1) {
@@ -78,7 +78,8 @@ client.on("message", async message => {
         return;
       }
 
-      video = analysisMusics(search.videos);
+      video = await analysisMusics(search.videos);
+      console.log("video", video);
     }
 
     let user = await UserModel.findOne({ id: sendId });
