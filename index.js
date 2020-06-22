@@ -1,3 +1,4 @@
+require("dotenv").config();
 const Discord = require("discord.js");
 const ytdl = require("ytdl-core");
 const mongoose = require("mongoose");
@@ -14,9 +15,9 @@ const MusicModel = require("./models/music");
 let room = [];
 
 client.on("ready", () => {
-  const mongoConnect = mongoose.connect(config.mongodb, {
+  const mongoConnect = mongoose.connect(process.env.mongodb, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
   });
 
   mongoConnect.then(() => console.log("MongoDB connected"));
@@ -28,13 +29,13 @@ client.on("ready", () => {
   client.user.setActivity("Waiting for fee");
 });
 
-client.on("message", async message => {
+client.on("message", async (message) => {
   if (message.author.bot) return;
   if (message.channel.type === "dm") return;
-  if (!message.content.startsWith(config.prefix)) return;
+  if (!message.content.startsWith(process.env.prefix)) return;
 
   const args = message.content
-    .slice(config.prefix.length)
+    .slice(process.env.prefix.length)
     .trim()
     .split(/ +/g);
   const command = args.shift().toLowerCase();
@@ -43,7 +44,7 @@ client.on("message", async message => {
     const channelId = args.shift();
 
     const voiceChannel = message.guild.channels.cache.find(
-      channel => channel.id === channelId
+      (channel) => channel.id === channelId
     );
 
     if (!voiceChannel) {
@@ -86,7 +87,7 @@ client.on("message", async message => {
 
       if (!user) {
         user = await UserModel.create({
-          id: sendId
+          id: sendId,
         });
       }
 
@@ -129,7 +130,7 @@ client.on("message", async message => {
 
     if (!user) {
       user = await UserModel.create({
-        id: sendId
+        id: sendId,
       });
     }
 
@@ -165,7 +166,7 @@ client.on("message", async message => {
 
     if (!user) {
       user = await UserModel.create({
-        id: sendId
+        id: sendId,
       });
     }
 
@@ -266,8 +267,8 @@ client.on("message", async message => {
 
 const selectMusics = async (voiceChannel, connection) => {
   const users = voiceChannel.members
-    .filter(member => !member.user.bot)
-    .map(member => member.user.id);
+    .filter((member) => !member.user.bot)
+    .map((member) => member.user.id);
 
   let musics = [];
 
@@ -312,7 +313,7 @@ const selectMusics = async (voiceChannel, connection) => {
       if (!music) {
         music = await MusicModel.create({
           id: id,
-          played: new Date(now.setTime(now.getTime() / 2))
+          played: new Date(now.setTime(now.getTime() / 2)),
         });
       }
 
@@ -322,7 +323,7 @@ const selectMusics = async (voiceChannel, connection) => {
         ...musics[id],
         id: id,
         rating:
-          musics[id].rating * 10000 + (now.getTime() - lastPlayed.getTime())
+          musics[id].rating * 10000 + (now.getTime() - lastPlayed.getTime()),
       });
     }
   }
@@ -353,7 +354,7 @@ const play = async (connection, voiceChannel) => {
     }
 
     const videoStream = ytdl(music.id, {
-      filter: "audioonly"
+      filter: "audioonly",
     });
 
     room[voiceChannel.id].pickup = connection.play(
@@ -368,7 +369,7 @@ const play = async (connection, voiceChannel) => {
       if (!_music) {
         _music = await MusicModel.create({
           id: id,
-          played: new Date()
+          played: new Date(),
         });
       } else {
         _music.played = new Date();
@@ -384,15 +385,15 @@ const play = async (connection, voiceChannel) => {
   return;
 };
 
-const waitFinished = pickup => {
-  return new Promise(resolve => {
+const waitFinished = (pickup) => {
+  return new Promise((resolve) => {
     pickup.on("finish", () => {
       resolve();
     });
   });
 };
 
-const analysisMusics = async videos => {
+const analysisMusics = async (videos) => {
   for (const video of videos) {
     try {
       const v = video.url.split("v=");
@@ -411,4 +412,4 @@ const analysisMusics = async videos => {
   }
 };
 
-client.login(config.token);
+client.login(process.env.token);
