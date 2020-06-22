@@ -312,7 +312,7 @@ const selectMusics = async (voiceChannel, connection) => {
       if (!music) {
         music = await MusicModel.create({
           id: id,
-          played: new Date(now.setFullYear(now.getFullYear() - 1))
+          played: new Date(now.setTime(now.getTime() / 2))
         });
       }
 
@@ -321,7 +321,8 @@ const selectMusics = async (voiceChannel, connection) => {
       room[voiceChannel.id]._musics.push({
         ...musics[id],
         id: id,
-        rating: musics[id].rating + (now.getTime() - lastPlayed.getTime())
+        rating:
+          musics[id].rating * 10000 + (now.getTime() - lastPlayed.getTime())
       });
     }
   }
