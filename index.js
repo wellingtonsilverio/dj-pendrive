@@ -1,4 +1,5 @@
 require("dotenv").config();
+const express = require("express");
 const Discord = require("discord.js");
 const ytdl = require("ytdl-core");
 const mongoose = require("mongoose");
@@ -8,6 +9,8 @@ const youtubeInfo = require("youtube-info");
 const client = new Discord.Client();
 const config = require("./config.json");
 mongoose.set("useCreateIndex", true);
+
+const app = express();
 
 const UserModel = require("./models/user");
 const MusicModel = require("./models/music");
@@ -413,3 +416,9 @@ const analysisMusics = async (videos) => {
 };
 
 client.login(process.env.token);
+
+app.route("/").get((req, res) => {
+  res.json({});
+});
+
+app.listen(80);
