@@ -415,10 +415,11 @@ const analysisMusics = async (videos) => {
   }
 };
 
-client.login(process.env.token);
-
+app.use(express.static("public"))
 app.route("/").get((req, res) => {
   res.json({});
 });
 
-app.listen(8080);
+app.listen(process.env.PORT || 8080);
+
+client.login(process.env.token);
